@@ -8,12 +8,11 @@ from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
-# =====================================================
-# 建立歷史資料（模擬2000期）
-# =====================================================
+# ======================================================
+# 建立歷史資料（模擬）
+# ======================================================
 
 history_cache = []
-
 
 def build_history(n=2000):
 
@@ -25,7 +24,9 @@ def build_history(n=2000):
     data = []
 
     for _ in range(n):
-        draw = sorted(random.sample(range(1, 81), 20))
+
+        draw = sorted(random.sample(range(1,81),20))
+
         data.append(draw)
 
     history_cache = data
@@ -33,9 +34,9 @@ def build_history(n=2000):
     return data
 
 
-# =====================================================
-# 熱號模型
-# =====================================================
+# ======================================================
+# 熱號
+# ======================================================
 
 def hot_scores(history):
 
@@ -47,9 +48,9 @@ def hot_scores(history):
     return c
 
 
-# =====================================================
-# 最近20期動量
-# =====================================================
+# ======================================================
+# 動量
+# ======================================================
 
 def momentum_scores(history):
 
@@ -63,11 +64,11 @@ def momentum_scores(history):
     return c
 
 
-# =====================================================
+# ======================================================
 # 共現矩陣
-# =====================================================
+# ======================================================
 
-def co_occurrence(history):
+def co_matrix(history):
 
     matrix = defaultdict(Counter)
 
@@ -82,71 +83,54 @@ def co_occurrence(history):
     return matrix
 
 
-# =====================================================
-# 馬可夫轉移
-# =====================================================
+# ======================================================
+# 馬可夫
+# ======================================================
 
-def markov_transition(history):
+def markov(history):
 
     trans = defaultdict(Counter)
 
-    for i in range(len(history) - 1):
+    for i in range(len(history)-1):
 
         current = history[i]
-        nxt = history[i + 1]
+        nxt = history[i+1]
 
         for a in current:
             for b in nxt:
+
                 trans[a][b] += 1
 
     return trans
 
 
-# =====================================================
-# 貝葉斯更新
-# =====================================================
-
-def bayes_update(prior, evidence):
-
-    result = {}
-
-    for n in range(1, 81):
-
-        p = prior.get(n, 1)
-        e = evidence.get(n, 1)
-
-        result[n] = (p * e) + 1
-
-    return result
-
-
-# =====================================================
+# ======================================================
 # 多因子模型
-# =====================================================
+# ======================================================
 
-def ensemble_model(history, k):
+def ensemble_model(history,k):
 
     hot = hot_scores(history)
 
     momentum = momentum_scores(history)
 
-    co = co_occurrence(history)
+    co = co_matrix(history)
 
-    markov = markov_transition(history)
+    mk = markov(history)
 
     last_draw = history[-1]
 
     weights = {}
 
-    for n in range(1, 81):
+    for n in range(1,81):
 
         score = 1
 
         # 熱號
-        score += hot[n] * 0.4
+        score += hot[n] * 0.5
 
         # 動量
-        score += momentum[n] * 1.5
+        score += momentum[n] * 1.8
 
         # 冷號補償
         if hot[n] < 400:
@@ -164,14 +148,11 @@ def ensemble_model(history, k):
         mk_score = 0
 
         for x in last_draw:
-            mk_score += markov[x][n]
+            mk_score += mk[x][n]
 
         score += mk_score * 0.03
 
         weights[n] = score
-
-    # 貝葉斯更新
-    weights = bayes_update(weights, momentum)
 
     nums = list(weights.keys())
     w = list(weights.values())
@@ -180,64 +161,48 @@ def ensemble_model(history, k):
 
     while len(result) < k:
 
-        pick = random.choices(nums, weights=w, k=1)[0]
+        pick = random.choices(nums,weights=w,k=1)[0]
 
         # 避免過度集中
-        if all(abs(pick - x) > 2 for x in result):
+        if all(abs(pick-x) > 2 for x in result):
             result.add(pick)
 
     return sorted(result)
 
 
-# =====================================================
-# 隨機模型
-# =====================================================
+# ======================================================
+# 回測
+# ======================================================
 
-def random_model(k):
+def hit(pred,actual):
 
-    return sorted(random.sample(range(1, 81), k))
+    return len(set(pred)&set(actual))
 
 
-# =====================================================
-# 熱號模型
-# =====================================================
+def random_model(history,k):
 
-def hot_model(history, k):
+    return sorted(random.sample(range(1,81),k))
+
+
+def hot_model(history,k):
 
     hot = hot_scores(history)
 
     top = [x[0] for x in hot.most_common(20)]
 
-    return sorted(random.sample(top, k))
+    return sorted(random.sample(top,k))
 
 
-# =====================================================
-# 動量模型
-# =====================================================
+def momentum_model(history,k):
 
-def momentum_model(history, k):
+    m = momentum_scores(history)
 
-    momentum = momentum_scores(history)
+    top = [x[0] for x in m.most_common(20)]
 
-    top = [x[0] for x in momentum.most_common(20)]
-
-    return sorted(random.sample(top, k))
+    return sorted(random.sample(top,k))
 
 
-# =====================================================
-# 命中數
-# =====================================================
-
-def hit_count(pick, draw):
-
-    return len(set(pick) & set(draw))
-
-
-# =====================================================
-# 回測
-# =====================================================
-
-def backtest(model_func, k):
+def backtest(model_func,k):
 
     history = build_history()
 
@@ -247,98 +212,102 @@ def backtest(model_func, k):
 
     results = []
 
-    for i in range(len(test) - 1):
+    for i in range(len(test)-1):
 
         hist = train + test[:i]
 
-        pred = model_func(hist, k)
+        pred = model_func(hist,k)
 
         actual = test[i]
 
-        h = hit_count(pred, actual)
+        results.append(hit(pred,actual))
 
-        results.append(h)
-
-    avg = sum(results) / len(results)
-
-    return round(avg, 2)
+    return round(sum(results)/len(results),2)
 
 
-# =====================================================
-# 抓台彩LIVE
-# =====================================================
+# ======================================================
+# LIVE 抓台彩
+# ======================================================
 
 def fetch_live():
 
     try:
 
-        url = "https://www.taiwanlottery.com/lotto/result/bingo_bingo"
+        url = "https://www.taiwanlottery.com.tw/lotto/BingoBingo/drawing.aspx"
 
         headers = {
-            "User-Agent": "Mozilla/5.0"
+            "User-Agent":"Mozilla/5.0"
         }
 
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.get(
+            url,
+            headers=headers,
+            timeout=10
+        )
 
-        soup = BeautifulSoup(r.text, "html.parser")
+        soup = BeautifulSoup(r.text,"html.parser")
 
         nums = []
 
-        balls = soup.select(".ball_tx")
+        # 真正Bingo球號
+        balls = soup.select(".contents_box02 .ball_green")
 
         for b in balls[:20]:
 
-            try:
-                nums.append(int(b.text.strip()))
-            except:
-                pass
+            txt = b.text.strip()
+
+            if txt.isdigit():
+                nums.append(int(txt))
 
         nums = sorted(nums)
 
-        issue = "LIVE"
+        # 期數
+        issue = "unknown"
 
-        m = re.search(r"第(\d+)期", soup.text)
+        txt = soup.text
+
+        m = re.search(r"第\s*(\d+)\s*期",txt)
 
         if m:
             issue = m.group(1)
 
         return {
-            "issue": issue,
-            "numbers": nums
+            "issue":issue,
+            "numbers":nums
         }
 
     except Exception as e:
 
         return {
-            "issue": "error",
-            "numbers": [],
-            "error": str(e)
+            "issue":"error",
+            "numbers":[],
+            "error":str(e)
         }
 
 
-# =====================================================
+# ======================================================
 # API：選號
-# =====================================================
+# ======================================================
 
-@app.route("/pick", methods=["POST"])
+@app.route("/pick",methods=["POST"])
 def pick():
 
     data = request.json
 
-    k = int(data.get("count", 3))
+    k = int(data.get("count",3))
 
     history = build_history()
 
-    nums = ensemble_model(history, k)
+    nums = ensemble_model(history,k)
 
     return jsonify({
-        "numbers": nums
+        "numbers":nums
     })
 
 
-# =====================================================
+# ======================================================
 # API：LIVE
-# =====================================================
+# ======================================================
 
 @app.route("/live")
 def live():
@@ -346,46 +315,30 @@ def live():
     return jsonify(fetch_live())
 
 
-# =====================================================
+# ======================================================
 # API：模型比較
-# =====================================================
+# ======================================================
 
 @app.route("/compare")
 def compare():
 
-    k = int(request.args.get("k", 3))
-
-    random_avg = backtest(
-        lambda h, kk: random_model(kk),
-        k
-    )
-
-    hot_avg = backtest(
-        hot_model,
-        k
-    )
-
-    momentum_avg = backtest(
-        momentum_model,
-        k
-    )
-
-    ensemble_avg = backtest(
-        ensemble_model,
-        k
-    )
+    k = int(request.args.get("k",3))
 
     return jsonify({
-        "random": random_avg,
-        "hot": hot_avg,
-        "momentum": momentum_avg,
-        "ensemble": ensemble_avg
+
+        "random":backtest(random_model,k),
+
+        "hot":backtest(hot_model,k),
+
+        "momentum":backtest(momentum_model,k),
+
+        "ensemble":backtest(ensemble_model,k)
     })
 
 
-# =====================================================
-# 首頁
-# =====================================================
+# ======================================================
+# UI
+# ======================================================
 
 @app.route("/")
 def home():
@@ -411,52 +364,40 @@ body{
     text-align:center;
 }
 
-h1{
-    color:#00ff99;
-}
-
 button{
     padding:10px 20px;
     font-size:18px;
     margin:10px;
-    border:none;
-    border-radius:8px;
-    cursor:pointer;
 }
 
 select{
     padding:8px;
-    font-size:20px;
+    font-size:18px;
 }
 
 .ball{
 
-    display:inline-block;
+    width:42px;
+    height:42px;
 
-    width:44px;
-    height:44px;
-
-    line-height:44px;
+    line-height:42px;
 
     border-radius:50%;
+
+    display:inline-block;
 
     background:#ddd;
 
     color:black;
 
-    margin:5px;
+    margin:4px;
 
     font-weight:bold;
 }
 
 .hit{
-
     background:red;
     color:white;
-}
-
-.box{
-    margin-top:20px;
 }
 
 </style>
@@ -471,9 +412,9 @@ select{
 
 <option value="1">1星</option>
 <option value="2">2星</option>
-<option value="3" selected>3星</option>
+<option value="3">3星</option>
 <option value="4">4星</option>
-<option value="5">5星</option>
+<option value="5" selected>5星</option>
 <option value="6">6星</option>
 <option value="7">7星</option>
 <option value="8">8星</option>
@@ -488,8 +429,6 @@ select{
 
 <button onclick="startMonitor()">開始監控</button>
 
-<div class="box">
-
 <h2 id="my_numbers"></h2>
 
 <h3 id="issue"></h3>
@@ -500,8 +439,6 @@ select{
 
 <h2 id="hit"></h2>
 
-</div>
-
 <hr>
 
 <button onclick="compare()">模型比較</button>
@@ -511,6 +448,13 @@ select{
 <script>
 
 let myNums=[];
+
+let monitorStarted=false;
+
+
+// ====================================
+// 選號
+// ====================================
 
 function pick(){
 
@@ -531,7 +475,9 @@ function pick(){
         })
 
     })
+
     .then(r=>r.json())
+
     .then(data=>{
 
         myNums=data.numbers;
@@ -544,10 +490,16 @@ function pick(){
 }
 
 
+// ====================================
+// LIVE
+// ====================================
+
 function loadLive(){
 
     fetch("/live")
+
     .then(r=>r.json())
+
     .then(data=>{
 
         document.getElementById("issue").innerHTML=
@@ -566,14 +518,14 @@ function loadLive(){
 
             if(myNums.includes(n)){
 
-                html+=
+                html +=
                 `<div class="ball hit">${n}</div>`;
 
                 hit++;
 
             }else{
 
-                html+=
+                html +=
                 `<div class="ball">${n}</div>`;
             }
 
@@ -589,14 +541,27 @@ function loadLive(){
 }
 
 
+// ====================================
+// 開始監控
+// ====================================
+
 function startMonitor(){
 
     loadLive();
 
-    setInterval(loadLive,30000);
+    if(!monitorStarted){
+
+        setInterval(loadLive,30000);
+
+        monitorStarted=true;
+    }
 
 }
 
+
+// ====================================
+// 模型比較
+// ====================================
 
 function compare(){
 
@@ -635,15 +600,16 @@ function compare(){
 """)
 
 
-# =====================================================
+# ======================================================
 # 啟動
-# =====================================================
+# ======================================================
 
 if __name__ == "__main__":
 
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT",10000))
 
     app.run(
         host="0.0.0.0",
         port=port
     )
+
