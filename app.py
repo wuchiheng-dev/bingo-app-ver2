@@ -1,4 +1,3 @@
-```python id="c8jwd3"
 from flask import Flask, jsonify, request, render_template_string
 import random
 import os
@@ -521,4 +520,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port
     )
-```
+
