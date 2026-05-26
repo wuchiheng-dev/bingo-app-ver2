@@ -1,281 +1,342 @@
 from flask import Flask, jsonify, request, render_template_string
+import requests
 import random
 import os
-import requests
-import re
+from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 
-app = Flask(__name__)
+app = Flask(**name**)
+
+HEADERS = {"User-Agent":"Mozilla/5.0"}
 
 # =====================================================
-# 歷史資料
-# =====================================================
 
-history_cache = []
+# LIVE 即時抓號
 
-
-def build_history(n=2000):
-
-    global history_cache
-
-    if history_cache:
-        return history_cache
-
-    data = []
-
-    for _ in range(n):
-
-        draw = sorted(random.sample(range(1,81),20))
-
-        data.append(draw)
-
-    history_cache = data
-
-    return data
-
-
-# =====================================================
-# 熱號
-# =====================================================
-
-def hot_scores(history):
-
-    c = Counter()
-
-    for d in history:
-        c.update(d)
-
-    return c
-
-
-# =====================================================
-# 動量
-# =====================================================
-
-def momentum_scores(history):
-
-    recent = history[-20:]
-
-    c = Counter()
-
-    for d in recent:
-        c.update(d)
-
-    return c
-
-
-# =====================================================
-# 共現矩陣
-# =====================================================
-
-def co_matrix(history):
-
-    matrix = defaultdict(Counter)
-
-    for draw in history:
-
-        for a in draw:
-            for b in draw:
-
-                if a != b:
-                    matrix[a][b] += 1
-
-    return matrix
-
-
-# =====================================================
-# 馬可夫
-# =====================================================
-
-def markov(history):
-
-    trans = defaultdict(Counter)
-
-    for i in range(len(history)-1):
-
-        current = history[i]
-        nxt = history[i+1]
-
-        for a in current:
-            for b in nxt:
-
-                trans[a][b] += 1
-
-    return trans
-
-
-# =====================================================
-# 智慧選號（主模型）
-# =====================================================
-
-def smart_pick(k):
-
-    history = build_history()
-
-    hot = hot_scores(history)
-
-    momentum = momentum_scores(history)
-
-    co = co_matrix(history)
-
-    mk = markov(history)
-
-    last_draw = history[-1]
-
-    weights = {}
-
-    for n in range(1,81):
-
-        score = 1
-
-        # 熱號
-        score += hot[n] * 0.45
-
-        # 動量
-        score += momentum[n] * 1.8
-
-        # 冷號補償
-        if hot[n] < 400:
-            score *= 1.15
-
-        # 共現
-        co_score = 0
-
-        for x in last_draw:
-            co_score += co[x][n]
-
-        score += co_score * 0.04
-
-        # 馬可夫
-        mk_score = 0
-
-        for x in last_draw:
-            mk_score += mk[x][n]
-
-        score += mk_score * 0.03
-
-        weights[n] = score
-
-    nums = list(weights.keys())
-    w = list(weights.values())
-
-    result = set()
-
-    while len(result) < k:
-
-        pick = random.choices(
-            nums,
-            weights=w,
-            k=1
-        )[0]
-
-        # 分散化
-        if all(abs(pick-x)>2 for x in result):
-            result.add(pick)
-
-    return sorted(result)
-
-
-# =====================================================
-# 抓台彩LIVE
 # =====================================================
 
 def fetch_live():
 
-    try:
+```
+try:
 
-        url = "https://www.taiwanlottery.com/lotto/result/bingo_bingo"
+    url = "https://lotto.auzonet.com/bingobingoV1.php"
 
-        headers = {
-            "User-Agent":"Mozilla/5.0"
-        }
+    html = requests.get(
+        url,
+        headers=HEADERS,
+        timeout=5
+    ).text
 
-        r = requests.get(
-            url,
-            headers=headers,
-            timeout=8
-        )
+    soup = BeautifulSoup(html, "lxml")
 
-        html = r.text
+    rows = soup.find_all("tr")
 
-        # 抓20個號碼
-        nums = re.findall(
-            r'ball_tx ball_yellow">(\d+)',
-            html
-        )
+    for r in rows:
 
-        if len(nums) < 20:
+        t = r.get_text(" ", strip=True)
 
-            nums = re.findall(
-                r'>(\d{2})<',
-                html
-            )[:20]
+        parts = t.split()
 
-        nums = [int(x) for x in nums[:20]]
+        if len(parts) >= 22 and parts[0].isdigit():
 
-        nums = sorted(nums)
+            return {
 
-        # 抓期數
-        issue = "unknown"
+                "term": int(parts[0]),
 
-        m = re.search(
-            r'第(\d+)期',
-            html
-        )
+                "time": parts[1],
 
-        if m:
-            issue = m.group(1)
+                "numbers": list(map(int, parts[2:22])),
 
-        return {
-            "issue":issue,
-            "numbers":nums
-        }
+                "source": "live"
+            }
 
-    except Exception as e:
+except Exception as e:
 
-        return {
-            "issue":"error",
-            "numbers":[],
-            "error":str(e)
-        }
+    print("LIVE解析錯:", e)
 
+return None
+```
 
 # =====================================================
-# API：選號
-# =====================================================
 
-@app.route("/pick",methods=["POST"])
-def pick():
-
-    data = request.json
-
-    k = int(data.get("count",3))
-
-    nums = smart_pick(k)
-
-    return jsonify({
-        "numbers":nums
-    })
-
+# API 備援
 
 # =====================================================
-# API：LIVE
+
+def fetch_api():
+
+```
+try:
+
+    url = "https://api.taiwanlottery.com/TLCAPIWeB/Lottery/LatestBingoResult"
+
+    r = requests.get(
+        url,
+        headers=HEADERS,
+        timeout=5
+    ).json()
+
+    d = r["content"]["lotteryBingoLatestPost"]
+
+    return {
+
+        "numbers":[int(x) for x in d["bigShowOrder"]],
+
+        "term":int(d["drawTerm"]),
+
+        "time":d["dDate"].replace("T"," "),
+
+        "source":"api"
+    }
+
+except:
+
+    return None
+```
+
 # =====================================================
 
-@app.route("/live")
-def live():
-
-    return jsonify(fetch_live())
-
+# 最新資料
 
 # =====================================================
-# UI
+
+def get_latest():
+
+```
+live = fetch_live()
+
+api = fetch_api()
+
+sources = [s for s in [live, api] if s]
+
+if not sources:
+
+    return {
+
+        "term":0,
+
+        "numbers":[],
+
+        "time":"error",
+
+        "source":"none"
+    }
+
+return max(
+    sources,
+    key=lambda x:x["term"]
+)
+```
+
+# =====================================================
+
+# 建立歷史資料（模擬）
+
+# =====================================================
+
+history_cache = []
+
+def build_history(n=2000):
+
+```
+global history_cache
+
+if history_cache:
+    return history_cache
+
+data = []
+
+for _ in range(n):
+
+    draw = sorted(
+        random.sample(range(1,81),20)
+    )
+
+    data.append(draw)
+
+history_cache = data
+
+return data
+```
+
+# =====================================================
+
+# 熱號
+
+# =====================================================
+
+def hot_scores(history):
+
+```
+c = Counter()
+
+for d in history:
+    c.update(d)
+
+return c
+```
+
+# =====================================================
+
+# 動量
+
+# =====================================================
+
+def momentum_scores(history):
+
+```
+recent = history[-20:]
+
+c = Counter()
+
+for d in recent:
+    c.update(d)
+
+return c
+```
+
+# =====================================================
+
+# 共現矩陣
+
+# =====================================================
+
+def co_matrix(history):
+
+```
+matrix = defaultdict(Counter)
+
+for draw in history:
+
+    for a in draw:
+        for b in draw:
+
+            if a != b:
+                matrix[a][b] += 1
+
+return matrix
+```
+
+# =====================================================
+
+# 馬可夫
+
+# =====================================================
+
+def markov(history):
+
+```
+trans = defaultdict(Counter)
+
+for i in range(len(history)-1):
+
+    current = history[i]
+
+    nxt = history[i+1]
+
+    for a in current:
+        for b in nxt:
+
+            trans[a][b] += 1
+
+return trans
+```
+
+# =====================================================
+
+# 智慧選號
+
+# =====================================================
+
+def smart_pick(k):
+
+```
+history = build_history()
+
+hot = hot_scores(history)
+
+momentum = momentum_scores(history)
+
+co = co_matrix(history)
+
+mk = markov(history)
+
+last_draw = history[-1]
+
+weights = {}
+
+for n in range(1,81):
+
+    score = 1
+
+    score += hot[n] * 0.45
+
+    score += momentum[n] * 1.8
+
+    if hot[n] < 400:
+        score *= 1.15
+
+    co_score = 0
+
+    for x in last_draw:
+        co_score += co[x][n]
+
+    score += co_score * 0.04
+
+    mk_score = 0
+
+    for x in last_draw:
+        mk_score += mk[x][n]
+
+    score += mk_score * 0.03
+
+    weights[n] = score
+
+nums = list(weights.keys())
+
+w = list(weights.values())
+
+result = set()
+
+while len(result) < k:
+
+    pick = random.choices(
+        nums,
+        weights=w,
+        k=1
+    )[0]
+
+    if all(abs(pick-x)>2 for x in result):
+        result.add(pick)
+
+return sorted(result)
+```
+
+# =====================================================
+
+# 命中
+
+# =====================================================
+
+def check_hit(pick, draw):
+
+```
+return list(set(pick)&set(draw))
+```
+
+# =====================================================
+
+# 首頁
+
 # =====================================================
 
 @app.route("/")
 def home():
 
-    return render_template_string("""
+```
+return render_template_string("""
+```
 
 <!DOCTYPE html>
 
@@ -297,24 +358,13 @@ body{
 }
 
 button{
-
     padding:10px 20px;
-
     font-size:18px;
-
     margin:10px;
-
-    border:none;
-
-    border-radius:10px;
-
-    cursor:pointer;
 }
 
 select{
-
     font-size:20px;
-
     padding:5px;
 }
 
@@ -339,7 +389,6 @@ select{
 }
 
 .hit{
-
     background:red;
     color:white;
 }
@@ -369,7 +418,9 @@ select{
 
 <br>
 
-<button onclick="pick()">智慧選號</button>
+<button onclick="pick()">
+智慧選號
+</button>
 
 <button onclick="startMonitor()">
 開始監控
@@ -392,9 +443,9 @@ let myNums=[];
 let started=false;
 
 
-// ====================================
-// 智慧選號
-// ====================================
+// =====================================
+// 選號
+// =====================================
 
 function pick(){
 
@@ -430,38 +481,32 @@ function pick(){
 }
 
 
-// ====================================
-// LIVE監控
-// ====================================
+// =====================================
+// 監控
+// =====================================
 
-function loadLive(){
+function loadMonitor(){
 
-    fetch("/live")
+    fetch("/monitor?nums="+myNums.join(","))
 
     .then(r=>r.json())
 
     .then(data=>{
 
         document.getElementById("issue").innerHTML=
-            "期數："+data.issue+" (live)";
-
-        let now=new Date();
+            "期數："+data.term;
 
         document.getElementById("time").innerHTML=
-            "時間："+now.toLocaleTimeString();
+            "開獎時間："+data.time;
 
         let html="";
 
-        let hit=0;
+        data.draw.forEach(n=>{
 
-        data.numbers.forEach(n=>{
-
-            if(myNums.includes(n)){
+            if(data.hit.includes(n)){
 
                 html +=
                 `<div class="ball hit">${n}</div>`;
-
-                hit++;
 
             }else{
 
@@ -475,24 +520,24 @@ function loadLive(){
             html;
 
         document.getElementById("hit").innerHTML=
-            "命中："+hit+" 個";
+            "命中："+data.hit.length+" 個 → "+data.hit.join(", ");
 
     });
 
 }
 
 
-// ====================================
+// =====================================
 // 開始監控
-// ====================================
+// =====================================
 
 function startMonitor(){
 
-    loadLive();
+    loadMonitor();
 
     if(!started){
 
-        setInterval(loadLive,30000);
+        setInterval(loadMonitor,30000);
 
         started=true;
     }
@@ -507,17 +552,69 @@ function startMonitor(){
 
 """)
 
+# =====================================================
+
+# 選號 API
 
 # =====================================================
+
+@app.route("/pick", methods=["POST"])
+def pick():
+
+```
+data = request.json
+
+k = int(data.get("count",3))
+
+return jsonify({
+    "numbers": smart_pick(k)
+})
+```
+
+# =====================================================
+
+# 監控 API
+
+# =====================================================
+
+@app.route("/monitor")
+def monitor():
+
+```
+nums = request.args.get("nums","")
+
+my = [int(x) for x in nums.split(",") if x]
+
+latest = get_latest()
+
+hit = check_hit(my, latest["numbers"])
+
+return jsonify({
+
+    "term": latest["term"],
+
+    "time": latest["time"],
+
+    "draw": latest["numbers"],
+
+    "hit": hit,
+
+    "source": latest["source"]
+})
+```
+
+# =====================================================
+
 # 啟動
+
 # =====================================================
 
-if __name__ == "__main__":
+if **name** == "**main**":
 
-    port = int(os.environ.get("PORT",10000))
+```
+port = int(os.environ.get("PORT",10000))
 
-    app.run(
-        host="0.0.0.0",
-        port=port
-    )
-
+app.run(
+    host="0.0.0.0",
+    port=port
+)
