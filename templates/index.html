@@ -1,179 +1,82 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>賓果賓果統計選號</title>
-
-<link rel="manifest" href="/manifest.json">
-
-<style>
-body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #0f0f0f;
-    color: white;
-    text-align: center;
-}
-
-/* 標題 */
-h2 {
-    margin: 10px 0;
-    color: #ffb300;
-}
-
-/* 控制區 */
-.control {
-    padding: 10px;
-}
-
-input {
-    width: 60px;
-    font-size: 16px;
-    text-align: center;
-}
-
-/* 按鈕 */
-button {
-    padding: 12px;
-    margin: 8px;
-    width: 90%;
-    font-size: 16px;
-    border: none;
-    border-radius: 8px;
-    background: #ff9800;
-    color: white;
-}
-
-/* 號碼球 */
-.grid {
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    gap: 6px;
-    padding: 10px;
-}
-
-.num {
-    background: #2c2c2c;
-    padding: 10px;
-    border-radius: 50%;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.selected {
-    background: #ff9800;
-}
-
-/* 結果 */
-.result {
-    margin: 10px;
-    font-size: 18px;
-    color: #00e676;
-}
-
-/* loading */
-#status {
-    font-size: 14px;
-    color: #aaa;
-}
-</style>
+<title>彩券量化分析平台</title>
 </head>
 
 <body>
 
-<h2>🎯 賓果賓果統計選號</h2>
+<h2>🎯 彩券量化分析平台</h2>
 
-<div class="control">
-    <label>選號數量（1~10）</label><br>
-    <input type="number" id="count" value="5" min="1" max="10">
-</div>
+<select id="count">
+<option value="1">1</option>
+<option value="2">2</option>
+<option value="3">3</option>
+<option value="4">4</option>
+<option value="5">5</option>
+<option value="6">6</option>
+<option value="7">7</option>
+<option value="8">8</option>
+<option value="9">9</option>
+<option value="10">10</option>
+</select>
 
-<button onclick="smartPick()">⚡ 統計選號（抓近200期）</button>
+<button onclick="pick()">智慧選號</button>
 
-<div id="status"></div>
+<h3 id="result"></h3>
 
-<div class="grid" id="grid"></div>
+<button onclick="compare()">模型比較</button>
 
-<div class="result" id="result"></div>
+<pre id="compare_result"></pre>
 
 <script>
 
-// =========================
-// 建立 1~80 號碼球
-// =========================
-let selected = new Set();
+function pick(){
 
-const grid = document.getElementById("grid");
+    let count=document.getElementById("count").value;
 
-for (let i = 1; i <= 80; i++) {
-    let div = document.createElement("div");
-    div.className = "num";
-    div.innerText = i;
-
-    div.onclick = () => {
-        if (selected.has(i)) {
-            selected.delete(i);
-            div.classList.remove("selected");
-        } else {
-            if (selected.size >= 10) return;
-            selected.add(i);
-            div.classList.add("selected");
-        }
-    };
-
-    grid.appendChild(div);
-}
-
-// =========================
-// 統計選號（呼叫後端）
-// =========================
-function smartPick() {
-    let count = document.getElementById("count").value;
-
-    document.getElementById("status").innerText = "📡 正在抓取近200期資料分析中...";
-
-    fetch("/pick", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
+    fetch("/pick",{
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json"
         },
-        body: JSON.stringify({ count: count })
+        body:JSON.stringify({
+            count:count
+        })
     })
-    .then(res => res.json())
-    .then(data => {
+    .then(r=>r.json())
+    .then(data=>{
 
-        // 清除舊選擇
-        selected.clear();
-        document.querySelectorAll(".num").forEach(n => {
-            n.classList.remove("selected");
-        });
+        document.getElementById("result").innerHTML=
+            "推薦號碼："+data.numbers.join(", ");
 
-        // 套用新選號
-        data.forEach(n => {
-            selected.add(n);
-            document.querySelectorAll(".num")[n - 1].classList.add("selected");
-        });
-
-        document.getElementById("status").innerText = "✅ 統計選號完成";
-        document.getElementById("result").innerText =
-            "推薦號碼：" + data.join(", ");
-    })
-    .catch(err => {
-        document.getElementById("status").innerText = "❌ 取得資料失敗";
-        console.log(err);
     });
+
 }
 
-// =========================
-// PWA（離線支援）
-// =========================
-if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js");
+function compare(){
+
+    let count=document.getElementById("count").value;
+
+    fetch("/compare?k="+count)
+    .then(r=>r.json())
+    .then(data=>{
+
+        document.getElementById("compare_result").innerHTML=
+`
+隨機模型：${data.random}
+熱號模型：${data.hot}
+動量模型：${data.momentum}
+多因子模型：${data.ensemble}
+`;
+
+    });
+
 }
 
 </script>
 
 </body>
 </html>
+
