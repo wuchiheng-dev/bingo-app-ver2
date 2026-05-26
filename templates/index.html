@@ -1,82 +1,187 @@
 <!DOCTYPE html>
 <html>
+
 <head>
+
 <meta charset="utf-8">
-<title>彩券量化分析平台</title>
+
+<title>Bingo穩定版</title>
+
+<style>
+
+body{
+    font-family:Arial;
+    text-align:center;
+    background:#111;
+    color:white;
+}
+
+button{
+    padding:10px 20px;
+    font-size:18px;
+    margin:10px;
+}
+
+select{
+    font-size:20px;
+    padding:5px;
+}
+
+.ball{
+
+    display:inline-block;
+
+    width:42px;
+    height:42px;
+
+    line-height:42px;
+
+    border-radius:50%;
+
+    margin:4px;
+
+    background:#ddd;
+
+    color:black;
+
+    font-weight:bold;
+}
+
+.hit{
+    background:red;
+    color:white;
+}
+
+</style>
+
 </head>
 
 <body>
 
-<h2>🎯 彩券量化分析平台</h2>
+<h1>🎯 Bingo穩定版</h1>
 
 <select id="count">
-<option value="1">1</option>
-<option value="2">2</option>
-<option value="3">3</option>
-<option value="4">4</option>
-<option value="5">5</option>
-<option value="6">6</option>
-<option value="7">7</option>
-<option value="8">8</option>
-<option value="9">9</option>
-<option value="10">10</option>
+
+<option value="1">1星</option>
+<option value="2">2星</option>
+<option value="3" selected>3星</option>
+<option value="4">4星</option>
+<option value="5">5星</option>
+<option value="6">6星</option>
+<option value="7">7星</option>
+<option value="8">8星</option>
+<option value="9">9星</option>
+<option value="10">10星</option>
+
 </select>
 
-<button onclick="pick()">智慧選號</button>
+<br>
 
-<h3 id="result"></h3>
+<button onclick="pick()">選號</button>
 
-<button onclick="compare()">模型比較</button>
+<button onclick="startMonitor()">開始監控</button>
 
-<pre id="compare_result"></pre>
+<h2 id="my_numbers"></h2>
+
+<h3 id="issue"></h3>
+
+<h3 id="time"></h3>
+
+<div id="live"></div>
+
+<h2 id="hit_count"></h2>
 
 <script>
 
+let myNums=[];
+
 function pick(){
 
-    let count=document.getElementById("count").value;
+    let count=parseInt(
+        document.getElementById("count").value
+    );
 
     fetch("/pick",{
+
         method:"POST",
+
         headers:{
             "Content-Type":"application/json"
         },
+
         body:JSON.stringify({
             count:count
         })
+
     })
     .then(r=>r.json())
     .then(data=>{
 
-        document.getElementById("result").innerHTML=
-            "推薦號碼："+data.numbers.join(", ");
+        myNums=data.numbers;
+
+        document.getElementById("my_numbers").innerHTML=
+            "你的號碼："+myNums.join(", ");
 
     });
 
 }
 
-function compare(){
 
-    let count=document.getElementById("count").value;
+function loadLive(){
 
-    fetch("/compare?k="+count)
+    fetch("/live")
     .then(r=>r.json())
     .then(data=>{
 
-        document.getElementById("compare_result").innerHTML=
-`
-隨機模型：${data.random}
-熱號模型：${data.hot}
-動量模型：${data.momentum}
-多因子模型：${data.ensemble}
-`;
+        document.getElementById("issue").innerHTML=
+            "期數："+data.issue+" (live)";
+
+        let now=new Date();
+
+        document.getElementById("time").innerHTML=
+            "時間："+now.toLocaleTimeString();
+
+        let html="";
+
+        let hit=0;
+
+        data.numbers.forEach(n=>{
+
+            if(myNums.includes(n)){
+
+                html+=
+                `<div class="ball hit">${n}</div>`;
+
+                hit++;
+
+            }else{
+
+                html+=
+                `<div class="ball">${n}</div>`;
+            }
+
+        });
+
+        document.getElementById("live").innerHTML=html;
+
+        document.getElementById("hit_count").innerHTML=
+            "命中："+hit+" 個";
 
     });
+
+}
+
+
+function startMonitor(){
+
+    loadLive();
+
+    setInterval(loadLive,30000);
 
 }
 
 </script>
 
 </body>
-</html>
 
+</html>
