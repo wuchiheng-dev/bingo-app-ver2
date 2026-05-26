@@ -1,18 +1,19 @@
+```python id="c8jwd3"
 from flask import Flask, jsonify, request, render_template_string
 import random
 import os
 import requests
 import re
 from collections import Counter, defaultdict
-from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
-# ======================================================
-# 建立歷史資料（模擬）
-# ======================================================
+# =====================================================
+# 歷史資料
+# =====================================================
 
 history_cache = []
+
 
 def build_history(n=2000):
 
@@ -34,9 +35,9 @@ def build_history(n=2000):
     return data
 
 
-# ======================================================
+# =====================================================
 # 熱號
-# ======================================================
+# =====================================================
 
 def hot_scores(history):
 
@@ -48,9 +49,9 @@ def hot_scores(history):
     return c
 
 
-# ======================================================
+# =====================================================
 # 動量
-# ======================================================
+# =====================================================
 
 def momentum_scores(history):
 
@@ -64,9 +65,9 @@ def momentum_scores(history):
     return c
 
 
-# ======================================================
+# =====================================================
 # 共現矩陣
-# ======================================================
+# =====================================================
 
 def co_matrix(history):
 
@@ -83,9 +84,9 @@ def co_matrix(history):
     return matrix
 
 
-# ======================================================
+# =====================================================
 # 馬可夫
-# ======================================================
+# =====================================================
 
 def markov(history):
 
@@ -104,11 +105,13 @@ def markov(history):
     return trans
 
 
-# ======================================================
-# 多因子模型
-# ======================================================
+# =====================================================
+# 智慧選號（主模型）
+# =====================================================
 
-def ensemble_model(history,k):
+def smart_pick(k):
+
+    history = build_history()
 
     hot = hot_scores(history)
 
@@ -127,14 +130,14 @@ def ensemble_model(history,k):
         score = 1
 
         # 熱號
-        score += hot[n] * 0.5
+        score += hot[n] * 0.45
 
         # 動量
         score += momentum[n] * 1.8
 
         # 冷號補償
         if hot[n] < 400:
-            score *= 1.2
+            score *= 1.15
 
         # 共現
         co_score = 0
@@ -142,7 +145,7 @@ def ensemble_model(history,k):
         for x in last_draw:
             co_score += co[x][n]
 
-        score += co_score * 0.05
+        score += co_score * 0.04
 
         # 馬可夫
         mk_score = 0
@@ -161,79 +164,28 @@ def ensemble_model(history,k):
 
     while len(result) < k:
 
-        pick = random.choices(nums,weights=w,k=1)[0]
+        pick = random.choices(
+            nums,
+            weights=w,
+            k=1
+        )[0]
 
-        # 避免過度集中
-        if all(abs(pick-x) > 2 for x in result):
+        # 分散化
+        if all(abs(pick-x)>2 for x in result):
             result.add(pick)
 
     return sorted(result)
 
 
-# ======================================================
-# 回測
-# ======================================================
-
-def hit(pred,actual):
-
-    return len(set(pred)&set(actual))
-
-
-def random_model(history,k):
-
-    return sorted(random.sample(range(1,81),k))
-
-
-def hot_model(history,k):
-
-    hot = hot_scores(history)
-
-    top = [x[0] for x in hot.most_common(20)]
-
-    return sorted(random.sample(top,k))
-
-
-def momentum_model(history,k):
-
-    m = momentum_scores(history)
-
-    top = [x[0] for x in m.most_common(20)]
-
-    return sorted(random.sample(top,k))
-
-
-def backtest(model_func,k):
-
-    history = build_history()
-
-    train = history[:1800]
-
-    test = history[1800:]
-
-    results = []
-
-    for i in range(len(test)-1):
-
-        hist = train + test[:i]
-
-        pred = model_func(hist,k)
-
-        actual = test[i]
-
-        results.append(hit(pred,actual))
-
-    return round(sum(results)/len(results),2)
-
-
-# ======================================================
-# LIVE 抓台彩
-# ======================================================
+# =====================================================
+# 抓台彩LIVE
+# =====================================================
 
 def fetch_live():
 
     try:
 
-        url = "https://www.taiwanlottery.com.tw/lotto/BingoBingo/drawing.aspx"
+        url = "https://www.taiwanlottery.com/lotto/result/bingo_bingo"
 
         headers = {
             "User-Agent":"Mozilla/5.0"
@@ -242,31 +194,35 @@ def fetch_live():
         r = requests.get(
             url,
             headers=headers,
-            timeout=10
+            timeout=8
         )
 
-        soup = BeautifulSoup(r.text,"html.parser")
+        html = r.text
 
-        nums = []
+        # 抓20個號碼
+        nums = re.findall(
+            r'ball_tx ball_yellow">(\d+)',
+            html
+        )
 
-        # 真正Bingo球號
-        balls = soup.select(".contents_box02 .ball_green")
+        if len(nums) < 20:
 
-        for b in balls[:20]:
+            nums = re.findall(
+                r'>(\d{2})<',
+                html
+            )[:20]
 
-            txt = b.text.strip()
-
-            if txt.isdigit():
-                nums.append(int(txt))
+        nums = [int(x) for x in nums[:20]]
 
         nums = sorted(nums)
 
-        # 期數
+        # 抓期數
         issue = "unknown"
 
-        txt = soup.text
-
-        m = re.search(r"第\s*(\d+)\s*期",txt)
+        m = re.search(
+            r'第(\d+)期',
+            html
+        )
 
         if m:
             issue = m.group(1)
@@ -285,9 +241,9 @@ def fetch_live():
         }
 
 
-# ======================================================
+# =====================================================
 # API：選號
-# ======================================================
+# =====================================================
 
 @app.route("/pick",methods=["POST"])
 def pick():
@@ -296,18 +252,16 @@ def pick():
 
     k = int(data.get("count",3))
 
-    history = build_history()
-
-    nums = ensemble_model(history,k)
+    nums = smart_pick(k)
 
     return jsonify({
         "numbers":nums
     })
 
 
-# ======================================================
+# =====================================================
 # API：LIVE
-# ======================================================
+# =====================================================
 
 @app.route("/live")
 def live():
@@ -315,30 +269,9 @@ def live():
     return jsonify(fetch_live())
 
 
-# ======================================================
-# API：模型比較
-# ======================================================
-
-@app.route("/compare")
-def compare():
-
-    k = int(request.args.get("k",3))
-
-    return jsonify({
-
-        "random":backtest(random_model,k),
-
-        "hot":backtest(hot_model,k),
-
-        "momentum":backtest(momentum_model,k),
-
-        "ensemble":backtest(ensemble_model,k)
-    })
-
-
-# ======================================================
+# =====================================================
 # UI
-# ======================================================
+# =====================================================
 
 @app.route("/")
 def home():
@@ -365,17 +298,30 @@ body{
 }
 
 button{
+
     padding:10px 20px;
+
     font-size:18px;
+
     margin:10px;
+
+    border:none;
+
+    border-radius:10px;
+
+    cursor:pointer;
 }
 
 select{
-    padding:8px;
-    font-size:18px;
+
+    font-size:20px;
+
+    padding:5px;
 }
 
 .ball{
+
+    display:inline-block;
 
     width:42px;
     height:42px;
@@ -384,18 +330,17 @@ select{
 
     border-radius:50%;
 
-    display:inline-block;
+    margin:4px;
 
     background:#ddd;
 
     color:black;
 
-    margin:4px;
-
     font-weight:bold;
 }
 
 .hit{
+
     background:red;
     color:white;
 }
@@ -414,8 +359,8 @@ select{
 <option value="2">2星</option>
 <option value="3">3星</option>
 <option value="4">4星</option>
-<option value="5" selected>5星</option>
-<option value="6">6星</option>
+<option value="5">5星</option>
+<option value="6" selected>6星</option>
 <option value="7">7星</option>
 <option value="8">8星</option>
 <option value="9">9星</option>
@@ -427,7 +372,9 @@ select{
 
 <button onclick="pick()">智慧選號</button>
 
-<button onclick="startMonitor()">開始監控</button>
+<button onclick="startMonitor()">
+開始監控
+</button>
 
 <h2 id="my_numbers"></h2>
 
@@ -439,21 +386,15 @@ select{
 
 <h2 id="hit"></h2>
 
-<hr>
-
-<button onclick="compare()">模型比較</button>
-
-<pre id="compare_result"></pre>
-
 <script>
 
 let myNums=[];
 
-let monitorStarted=false;
+let started=false;
 
 
 // ====================================
-// 選號
+// 智慧選號
 // ====================================
 
 function pick(){
@@ -491,7 +432,7 @@ function pick(){
 
 
 // ====================================
-// LIVE
+// LIVE監控
 // ====================================
 
 function loadLive(){
@@ -531,7 +472,8 @@ function loadLive(){
 
         });
 
-        document.getElementById("live").innerHTML=html;
+        document.getElementById("live").innerHTML=
+            html;
 
         document.getElementById("hit").innerHTML=
             "命中："+hit+" 個";
@@ -549,45 +491,12 @@ function startMonitor(){
 
     loadLive();
 
-    if(!monitorStarted){
+    if(!started){
 
         setInterval(loadLive,30000);
 
-        monitorStarted=true;
+        started=true;
     }
-
-}
-
-
-// ====================================
-// 模型比較
-// ====================================
-
-function compare(){
-
-    let count=parseInt(
-        document.getElementById("count").value
-    );
-
-    fetch("/compare?k="+count)
-
-    .then(r=>r.json())
-
-    .then(data=>{
-
-        document.getElementById("compare_result").innerHTML=
-
-`
-隨機模型平均命中：${data.random}
-
-熱號模型平均命中：${data.hot}
-
-動量模型平均命中：${data.momentum}
-
-多因子模型平均命中：${data.ensemble}
-`;
-
-    });
 
 }
 
@@ -600,9 +509,9 @@ function compare(){
 """)
 
 
-# ======================================================
+# =====================================================
 # 啟動
-# ======================================================
+# =====================================================
 
 if __name__ == "__main__":
 
@@ -612,4 +521,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port
     )
-
+```
