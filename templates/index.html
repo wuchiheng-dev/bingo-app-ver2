@@ -62,6 +62,7 @@ select{
 .hit{
 
     background:red;
+
     color:white;
 }
 
@@ -79,8 +80,8 @@ select{
 <option value="2">2星</option>
 <option value="3">3星</option>
 <option value="4">4星</option>
-<option value="5">5星</option>
-<option value="6" selected>6星</option>
+<option value="5" selected>5星</option>
+<option value="6">6星</option>
 <option value="7">7星</option>
 <option value="8">8星</option>
 <option value="9">9星</option>
@@ -88,7 +89,7 @@ select{
 
 </select>
 
-<br>
+<br><br>
 
 <button onclick="pick()">
 智慧選號
@@ -112,11 +113,11 @@ select{
 
 let myNums=[];
 
-let started=false;
+let timer=null;
 
 
 // ====================================
-// 智慧選號
+// 選號
 // ====================================
 
 function pick(){
@@ -146,7 +147,7 @@ function pick(){
         myNums=data.numbers;
 
         document.getElementById("my_numbers").innerHTML=
-            "你的號碼："+myNums.join(", ");
+        "你的號碼："+myNums.join(", ");
 
     });
 
@@ -157,103 +158,47 @@ function pick(){
 // LIVE監控
 // ====================================
 
-function loadLive(){
-
-    let url =
-    "https://www.taiwanlottery.com/lotto/result/bingo_bingo";
-
-    let proxy =
-    "https://api.allorigins.win/raw?url=";
+function loadMonitor(){
 
     fetch(
-        proxy + encodeURIComponent(url)
+        "/monitor?nums="+myNums.join(",")
     )
 
-    .then(r=>r.text())
+    .then(r=>r.json())
 
-    .then(html=>{
-
-        // 期數
-
-        let issue="未知";
-
-        let m =
-        html.match(/第(\d+)期/);
-
-        if(m){
-
-            issue=m[1];
-        }
-
-        // 開獎號碼
-
-        let nums=[];
-
-        let matches =
-        [...html.matchAll(/>(\d{2})</g)];
-
-        matches.forEach(x=>{
-
-            let n=parseInt(x[1]);
-
-            if(
-                n>=1 &&
-                n<=80 &&
-                !nums.includes(n)
-            ){
-                nums.push(n);
-            }
-
-        });
-
-        nums=nums.slice(0,20);
-
-        // 顯示
+    .then(data=>{
 
         document.getElementById("issue").innerHTML=
-        "期數："+issue+" (live)";
-
-        let now=new Date();
+        "期數："+data.term+
+        " ("+data.source+")";
 
         document.getElementById("time").innerHTML=
-        "時間："+now.toLocaleTimeString();
+        "時間："+data.time;
 
-        let htmlBalls="";
+        let html="";
 
-        let hit=[];
+        data.draw.forEach(n=>{
 
-        nums.forEach(n=>{
+            if(data.hit.includes(n)){
 
-            if(myNums.includes(n)){
-
-                htmlBalls +=
+                html +=
                 `<div class="ball hit">${n}</div>`;
-
-                hit.push(n);
 
             }else{
 
-                htmlBalls +=
+                html +=
                 `<div class="ball">${n}</div>`;
             }
 
         });
 
         document.getElementById("live").innerHTML=
-        htmlBalls;
+        html;
 
         document.getElementById("hit").innerHTML=
-        "命中："+hit.length+
-        " 個 → "+hit.join(", ");
-
-    })
-
-    .catch(err=>{
-
-        console.log(err);
-
-        document.getElementById("issue").innerHTML=
-        "LIVE抓取失敗";
+        "命中："+data.hit.length+
+        " 個 → "+
+        data.hit.join(", ");
 
     });
 
@@ -266,13 +211,21 @@ function loadLive(){
 
 function startMonitor(){
 
-    loadLive();
+    if(myNums.length===0){
 
-    if(!started){
+        alert("請先智慧選號");
 
-        setInterval(loadLive,30000);
+        return;
+    }
 
-        started=true;
+    loadMonitor();
+
+    if(timer===null){
+
+        timer=setInterval(
+            loadMonitor,
+            30000
+        );
     }
 
 }
