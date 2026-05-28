@@ -210,28 +210,14 @@ function loadMonitor(){
 // ====================================
 
 function startMonitor(){
-
     if(myNums.length===0){
-
         alert("請先智慧選號");
-
         return;
     }
 
     loadMonitor();
 
     if(timer===null){
-
-        timer=setInterval(
-            loadMonitor,
-            30000
-        );
+        timer=setInterval(loadMonitor, 5000);  // 改5秒測試
     }
-
 }
-
-</script>
-
-</body>
-
-</html>
